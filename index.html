@@ -46,10 +46,7 @@ const map = new maplibregl.Map({
         sources: {
             buildings: {
                 type: "vector",
-                tiles: [
-                    // 🚨 This URL MUST MATCH the service worker’s intercept path
-                    "quad/{z}/{x}/{y}.geojson"
-                ],
+                "tiles": ["/msbuildings/quad/{z}/{x}/{y}.geojson"],
                 minzoom: 13,
                 maxzoom: 17
             }
