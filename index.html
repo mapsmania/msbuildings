@@ -1,271 +1,75 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>MapLibre + Microsoft Buildings (GitHub Pages Fixed)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    html, body, #map { height: 100%; margin:0; padding:0; }
-    #info {
-      position: absolute; top: 8px; left: 8px;
-      z-index: 2; background: rgba(255,255,255,0.9);
-      padding: 8px; border-radius: 6px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-      font-family: sans-serif; max-width: 320px;
-    }
-  </style>
+    <meta charset="utf-8">
+    <title>Microsoft Buildings Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- MapLibre GL -->
-  <link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet"/>
+
+    <style>
+        body { margin:0; overflow:hidden; }
+        #map { width:100%; height:100vh; }
+        #info {
+            position:absolute; top:10px; left:10px;
+            background: white; padding:8px 12px;
+            font-size:14px; border-radius:6px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.25);
+        }
+    </style>
 </head>
-
 <body>
+<div id="info">Microsoft Buildings Demo<br>Service Worker: loading…</div>
 <div id="map"></div>
 
-<div id="info">
-  <strong>Microsoft Buildings Demo</strong><br>
-  Hosted on GitHub Pages<br>
-  <span id="sw-status">Service Worker: (loading…)</span><br><br>
-  Zoom & pan to load tiles (Z14)
-</div>
-
 <script>
-/* -------------------------------
-   Constants
-------------------------------- */
-const TILE_ZOOM = 14;
-const MAX_TILES = 40; // safety limit
-
-
-/* -------------------------------
-   Helper functions
-------------------------------- */
-function tileXYToQuadKey(x, y, z){
-  let q = "";
-  for (let i = z; i > 0; i--) {
-    let digit = 0;
-    const mask = 1 << (i - 1);
-    if (x & mask) digit++;
-    if (y & mask) digit += 2;
-    q += digit;
-  }
-  return q;
-}
-
-function lonLatToTileXY(lon, lat, z){
-  const latRad = lat * Math.PI/180;
-  const n = 2**z;
-  const x = Math.floor((lon + 180)/360 * n);
-  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1/Math.cos(latRad))/Math.PI)/2 * n);
-  return [x, y];
-}
-
-
-/* -------------------------------
-   SERVICE WORKER — GitHub Pages Fix
-------------------------------- */
-if ("serviceWorker" in navigator) {
-
-  const swCode = `
-    const INDEX_URL =
-      "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv";
-
-    let quadIndex = null;
-
-    self.addEventListener("install", e => self.skipWaiting());
-    self.addEventListener("activate", e => self.clients.claim());
-
-    async function loadIndex(){
-      if (quadIndex) return quadIndex;
-      quadIndex = new Map();
-
-      try {
-        const r = await fetch(INDEX_URL);
-        const csv = await r.text();
-        const lines = csv.split("\\n").map(x => x.trim()).filter(Boolean);
-
-        const header = lines[0].split(",");
-        const qCol = header.findIndex(h => h.toLowerCase().includes("quad"));
-        const uCol = header.findIndex(h => h.toLowerCase().includes("url"));
-
-        for (let i=1; i<lines.length; i++){
-          const row = lines[i].split(",");
-          quadIndex.set(row[qCol], row[uCol]);
-        }
-      } catch(err){
-        console.error("SW could not load index", err);
-      }
-      return quadIndex;
-    }
-
-    function ndjsonToFC(text){
-      const features = [];
-      text.split("\\n").forEach(line => {
-        const ln = line.trim();
-        if (!ln) return;
-        try {
-          const obj = JSON.parse(ln);
-          if (obj.type === "Feature") features.push(obj);
-        } catch(e){}
-      });
-      return { type:"FeatureCollection", features };
-    }
-
-    self.addEventListener("fetch", evt => {
-      const url = new URL(evt.request.url);
-
-      const match = url.pathname.match(/quad\\/(\\d+)\\/(\\d+)\\/(\\d+)\\.geojson$/);
-      if (!match) return;
-
-      evt.respondWith((async () => {
-
-        const [_, z, x, y] = match;
-        const qk = (function tileXYToQuadKey(x,y,z){
-          let q=""; for(let i=z;i>0;i--){
-            let d=0; const m=1<<(i-1);
-            if(x&m) d++; if(y&m) d+=2; q+=d;
-          } return q;
-        })(+x,+y,+z);
-
-        await loadIndex();
-
-        const remote = quadIndex.get(qk);
-        if (!remote)
-          return new Response(JSON.stringify({type:"FeatureCollection",features:[]}),
-            { headers:{ "Content-Type":"application/json" }});
-
-        try {
-          const r = await fetch(remote);
-          const txt = await r.text();
-          const fc = ndjsonToFC(txt);
-          return new Response(JSON.stringify(fc), {
-            headers:{ "Content-Type":"application/json" }
-          });
-        } catch(e){
-          return new Response(JSON.stringify({type:"FeatureCollection",features:[]}),
-            { headers:{ "Content-Type":"application/json" }});
-        }
-
-      })());
-    });
-  `;
-
-  const blobURL = URL.createObjectURL(new Blob([swCode], {type:"text/javascript"}));
-
-  navigator.serviceWorker
-    .register(blobURL, { scope: "./" })   // ⭐ IMPORTANT FIX FOR GITHUB PAGES
+// 🌐 Register the real sw.js from the repo root
+navigator.serviceWorker.register("./sw.js", { scope: "./" })
     .then(reg => {
-      document.getElementById("sw-status").textContent =
-        "Service Worker: active ✔ (" + reg.scope + ")";
-      console.log("SW registered with scope:", reg.scope);
+        document.getElementById("info").innerHTML =
+            "Microsoft Buildings Demo<br>Service Worker: OK ✔";
+        console.log("SW registered:", reg);
     })
     .catch(err => {
-      document.getElementById("sw-status").textContent = "Service Worker: FAILED ✖";
-      console.error("SW registration failed:", err);
+        document.getElementById("info").innerHTML =
+            "Microsoft Buildings Demo<br>Service Worker: FAILED ✖";
+        console.error("SW registration failed:", err);
     });
-}
 
+// ----- MapLibre -----
 
-/* -------------------------------
-   MAPLIBRE MAP
-------------------------------- */
 const map = new maplibregl.Map({
-  container: "map",
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256
-      }
+    container: "map",
+    style: {
+        version: 8,
+        sources: {
+            buildings: {
+                type: "vector",
+                tiles: [
+                    // 🚨 This URL MUST MATCH the service worker’s intercept path
+                    "quad/{z}/{x}/{y}.geojson"
+                ],
+                minzoom: 13,
+                maxzoom: 17
+            }
+        },
+        layers: [
+            {
+                id: "buildings",
+                type: "fill",
+                source: "buildings",
+                "source-layer": "default",
+                paint: {
+                    "fill-color": "#ff5500",
+                    "fill-opacity": 0.5
+                }
+            }
+        ]
     },
-    layers: [
-      { id:"osm", type:"raster", source:"osm" }
-    ]
-  },
-  center: [23.7275, 37.9838], // Athens
-  zoom: 13
+    center: [23.72, 37.98], // Athens example
+    zoom: 14
 });
-
-map.addControl(new maplibregl.NavigationControl(), "top-right");
-
-
-/* -------------------------------
-   Tile Loading
-------------------------------- */
-const loadedTiles = new Set();
-
-function getVisibleTiles(z){
-  const b = map.getBounds();
-  const [x1,y1] = lonLatToTileXY(b.getNorthWest().lng, b.getNorthWest().lat, z);
-  const [x2,y2] = lonLatToTileXY(b.getSouthEast().lng, b.getSouthEast().lat, z);
-
-  const xmin = Math.min(x1,x2);
-  const xmax = Math.max(x1,x2);
-  const ymin = Math.min(y1,y2);
-  const ymax = Math.max(y1,y2);
-
-  const out = [];
-  for(let x=xmin; x<=xmax; x++)
-    for(let y=ymin; y<=ymax; y++)
-      out.push({x,y,z});
-
-  return out;
-}
-
-async function loadTiles(){
-  const tiles = getVisibleTiles(TILE_ZOOM);
-  if (tiles.length > MAX_TILES){
-    console.warn("Too many tiles", tiles.length);
-    return;
-  }
-
-  for (const t of tiles){
-    const qk = tileXYToQuadKey(t.x,t.y,t.z);
-    const id = "qk-" + qk;
-
-    if (loadedTiles.has(id)) continue;
-
-    const url = `./quad/${t.z}/${t.x}/${t.y}.geojson`;
-
-    try {
-      const r = await fetch(url);
-      const gj = await r.json();
-
-      if (!gj.features?.length) continue;
-
-      map.addSource(id, {
-        type:"geojson",
-        data: gj
-      });
-
-      map.addLayer({
-        id: id+"-fill",
-        source: id,
-        type: "fill",
-        paint: { "fill-color":"#ff6600", "fill-opacity":0.45 }
-      });
-
-      map.addLayer({
-        id: id+"-outline",
-        source: id,
-        type: "line",
-        paint: { "line-color":"#cc3300", "line-width":1 }
-      });
-
-      loadedTiles.add(id);
-    }
-    catch(e){
-      console.warn("Tile failed", url, e);
-    }
-  }
-}
-
-map.on("load", loadTiles);
-map.on("moveend", loadTiles);
-
 </script>
 </body>
 </html>
