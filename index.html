@@ -76,11 +76,15 @@ const map = new maplibregl.Map({
     style: {
         version: 8,
         sources: {
-            buildings: {
-                type: "geojson",
-                data: "msb://14/9271/6320"  // initial tile (any valid)
-            }
-        },
+    buildings: {
+        type: "geojson",
+        tiles: [
+            "msb://{z}/{x}/{y}"
+        ],
+        maxzoom: 17,
+        minzoom: 13
+    }
+},
         layers: [
             {
                 id: "buildings-fill",
@@ -105,19 +109,6 @@ const map = new maplibregl.Map({
 });
 
 
-// ---------------------------------------------------------
-// 4. Dynamically update source data per tile
-// ---------------------------------------------------------
-map.on("moveend", () => {
-    const center = map.getCenter();
-    const zoom = Math.floor(map.getZoom());
-    if (zoom < 13 || zoom > 17) return;
-
-    const tile = lngLatToTile(center.lng, center.lat, zoom);
-
-    const url = `msb://${zoom}/${tile.x}/${tile.y}`;
-    map.getSource("buildings").setData(url);
-});
 
 
 // Helper: lon/lat → tile coordinate
