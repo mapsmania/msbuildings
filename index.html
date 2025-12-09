@@ -32,7 +32,7 @@
 
 <script>
 // ---------------------------------------------------------
-// 1. Register the real service worker (NOT a blob)
+// 1. Register the service worker
 // ---------------------------------------------------------
 navigator.serviceWorker.register("./sw.js", { scope: "./" })
     .then(reg => {
@@ -46,16 +46,12 @@ navigator.serviceWorker.register("./sw.js", { scope: "./" })
         console.error(err);
     });
 
-
 // ---------------------------------------------------------
-// 2. Custom protocol loader for tiled GeoJSON
+// 2. Custom protocol handler for msb://Z/X/Y
 // ---------------------------------------------------------
 maplibregl.addProtocol("msb", (params, callback) => {
-    // URL format: msb://Z/X/Y
     const [z, x, y] = params.url.split("/");
-
-    const actualURL =
-        `/msbuildings/quad/${z}/${x}/${y}.geojson`;
+    const actualURL = `/msbuildings/quad/${z}/${x}/${y}.geojson`;
 
     fetch(actualURL)
         .then(r => r.json())
@@ -65,26 +61,21 @@ maplibregl.addProtocol("msb", (params, callback) => {
     return { cancel: () => {} };
 });
 
-
 // ---------------------------------------------------------
-// 3. Create MapLibre map
+// 3. Create the MapLibre map
 // ---------------------------------------------------------
 const map = new maplibregl.Map({
     container: "map",
-    center: [23.72, 37.98],   // Athens example
+    center: [23.72, 37.98], // Athens
     zoom: 14,
     style: {
         version: 8,
         sources: {
-    buildings: {
-        type: "geojson",
-        tiles: [
-            "msb://{z}/{x}/{y}"
-        ],
-        maxzoom: 17,
-        minzoom: 13
-    }
-},
+            buildings: {
+                type: "geojson",
+                data: "msb://14/9271/6320" // initial tile
+            }
+        },
         layers: [
             {
                 id: "buildings-fill",
@@ -108,10 +99,9 @@ const map = new maplibregl.Map({
     }
 });
 
-
-
-
-// Helper: lon/lat → tile coordinate
+// ---------------------------------------------------------
+// 4. Tile functions
+// ---------------------------------------------------------
 function lngLatToTile(lon, lat, z) {
     const x = Math.floor((lon + 180) / 360 * (1 << z));
     const y = Math.floor(
@@ -121,6 +111,36 @@ function lngLatToTile(lon, lat, z) {
     return { x, y };
 }
 
+function updateTiles() {
+    const center = map.getCenter();
+    const zoom = Math.floor(map.getZoom());
+    if (zoom < 13 || zoom > 17) return;
+
+    const centerTile = lngLatToTile(center.lng, center.lat, zoom);
+    const tiles = [];
+
+    // 3x3 tile grid around center
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            tiles.push({
+                x: centerTile.x + dx,
+                y: centerTile.y + dy
+            });
+        }
+    }
+
+    // Fetch all tiles sequentially for simplicity
+    tiles.forEach(t => {
+        const url = `msb://${zoom}/${t.x}/${t.y}`;
+        map.getSource("buildings").setData(url);
+    });
+}
+
+// Initial tile load
+map.on("load", updateTiles);
+
+// Update on moveend
+map.on("moveend", updateTiles);
 </script>
 </body>
 </html>
